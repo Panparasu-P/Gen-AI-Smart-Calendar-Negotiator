@@ -1,0 +1,1474 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Calendar Negotiator</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Space Grotesk', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    
+    .animate-slide { animation: slideIn 0.3s ease-out forwards; }
+    .animate-pulse-once { animation: pulse 0.3s ease-out; }
+    
+    .loading-shimmer {
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    
+    .time-slot {
+      transition: all 0.2s ease;
+    }
+    
+    .time-slot:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: 60px repeat(7, 1fr);
+      gap: 2px;
+    }
+    
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: #1a1a2e; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 3px; }
+    
+    .glass {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .tooltip {
+      position: relative;
+    }
+    
+    .tooltip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 8px;
+      background: #2d2d4a;
+      color: #fff;
+      font-size: 12px;
+      border-radius: 4px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+    
+    .tooltip:hover::after { opacity: 1; }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+      .calendar-grid {
+        grid-template-columns: 50px repeat(7, 1fr);
+      }
+      
+      .calendar-grid > div {
+        font-size: 0.75rem;
+        padding: 0.25rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .calendar-grid {
+        grid-template-columns: 45px repeat(7, 1fr);
+      }
+      
+      .calendar-grid > div {
+        font-size: 0.65rem;
+        padding: 0.125rem;
+        min-height: 30px !important;
+      }
+    }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full bg-[#0f0f1a] text-gray-100 overflow-auto">
+  <div id="app" class="h-full w-full flex flex-col">
+   <!-- Header -->
+   <header class="glass border-b border-[#2d2d4a] px-4 md:px-6 py-4">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+     <div class="flex flex-col items-center md:flex-row md:items-center gap-3 w-full md:w-auto">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0">
+       <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+       </svg>
+      </div>
+      <div class="text-center md:text-left flex-1">
+       <h1 id="app-title" class="text-lg md:text-xl font-bold text-white line-clamp-1">Smart Calendar Negotiator</h1>
+       <p id="welcome-message" class="text-xs md:text-sm text-gray-400 line-clamp-1">Find the perfect meeting time</p>
+      </div>
+     </div>
+     <div class="flex items-center gap-2 md:gap-4 w-full md:w-auto flex-1 md:flex-none justify-between md:justify-end">
+      <span id="record-count" class="text-xs text-gray-500 mono hidden md:block"></span>
+      <div class="grid grid-cols-3 gap-1 md:flex md:items-center md:gap-2 flex-1 md:flex-none">
+       <button onclick="showView('dashboard')" class="nav-btn px-2 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all" data-view="dashboard">Dashboard</button> <button onclick="showView('negotiate')" class="nav-btn px-2 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all" data-view="negotiate">Negotiate</button> <button onclick="showView('calendar')" class="nav-btn px-2 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all" data-view="calendar">Calendar</button>
+      </div><button onclick="toggleMenu()" class="p-2 hover:bg-white/10 rounded-lg transition-colors md:hidden">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+       </svg></button>
+     </div>
+    </div>
+   </header><!-- Mobile Menu -->
+   <div id="mobile-menu" class="hidden fixed inset-0 z-50 md:hidden">
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" onclick="toggleMenu()"></div>
+    <div class="fixed top-0 right-0 w-64 h-screen bg-[#1a1a2e] border-l border-[#2d2d4a] p-6 overflow-auto z-50">
+     <button onclick="toggleMenu()" class="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg></button>
+     <div class="space-y-2 mt-8">
+      <button onclick="showView('dashboard'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 5h4" />
+       </svg> Dashboard </button> <button onclick="showView('negotiate'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+       </svg> Negotiate </button> <button onclick="showView('calendar'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+       </svg> Calendar </button>
+      <hr class="border-white/10 my-4"><button onclick="showView('settings'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+       </svg> Settings </button> <button onclick="showView('help'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+       </svg> Help &amp; Support </button> <button onclick="showView('about'); toggleMenu()" class="w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-2">
+       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+       </svg> About </button>
+     </div>
+    </div>
+   </div><!-- Main Content -->
+   <main class="flex-1 overflow-auto scrollbar-thin p-4 md:p-6 w-full">
+    <div class="w-full max-w-7xl mx-auto px-0">
+     <!-- Dashboard View -->
+     <div id="dashboard-view" class="view-panel w-full">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 w-full">
+       <!-- Stats Cards -->
+       <div class="glass rounded-2xl p-6 animate-slide" style="animation-delay: 0.1s">
+        <div class="flex items-center justify-between mb-4">
+         <span class="text-gray-400 text-sm">Pending Requests</span>
+         <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+         </div>
+        </div>
+        <p id="pending-count" class="text-3xl font-bold text-white mono">0</p>
+       </div>
+       <div class="glass rounded-2xl p-6 animate-slide" style="animation-delay: 0.2s">
+        <div class="flex items-center justify-between mb-4">
+         <span class="text-gray-400 text-sm">Confirmed Meetings</span>
+         <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+         </div>
+        </div>
+        <p id="confirmed-count" class="text-3xl font-bold text-white mono">0</p>
+       </div>
+       <div class="glass rounded-2xl p-6 animate-slide" style="animation-delay: 0.3s">
+        <div class="flex items-center justify-between mb-4">
+         <span class="text-gray-400 text-sm">Available Slots</span>
+         <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+          <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+         </div>
+        </div>
+        <p id="slots-count" class="text-3xl font-bold text-white mono">0</p>
+       </div>
+      </div><!-- Quick Actions -->
+      <div class="glass rounded-2xl p-6 mb-8 animate-slide" style="animation-delay: 0.4s">
+       <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg> Quick Actions</h2>
+       <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <button onclick="showAddAvailability()" class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all group">
+         <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+         </div><span class="text-sm font-medium">Add Availability</span> </button> <button onclick="showNewRequest()" class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 transition-all group">
+         <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+          <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+         </div><span class="text-sm font-medium">New Request</span> </button> <button onclick="runNegotiation()" class="p-4 rounded-xl bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition-all group">
+         <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+          <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+         </div><span class="text-sm font-medium">Auto Negotiate</span> </button> <button onclick="showView('calendar')" class="p-4 rounded-xl bg-teal-500/10 border border-teal-500/30 hover:bg-teal-500/20 transition-all group">
+         <div class="w-10 h-10 rounded-lg bg-teal-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+          <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+         </div><span class="text-sm font-medium">View Calendar</span> </button>
+       </div>
+      </div><!-- Recent Activity -->
+      <div class="glass rounded-2xl p-6 animate-slide" style="animation-delay: 0.5s">
+       <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg> Recent Activity</h2>
+       <div id="recent-activity" class="space-y-3">
+        <div class="text-center py-8 text-gray-500">
+         <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+         </svg>
+         <p>No recent activity</p>
+         <p class="text-sm mt-1">Start by adding your availability or creating a meeting request</p>
+        </div>
+       </div>
+      </div>
+     </div><!-- Negotiate View -->
+     <div id="negotiate-view" class="view-panel hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 lg:gap-6">
+       <!-- Meeting Requests Panel -->
+       <div class="glass rounded-2xl p-4 md:p-6">
+        <div class="flex items-center justify-between mb-6">
+         <h2 class="text-lg font-semibold flex items-center gap-2">
+          <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg> Meeting Requests</h2><button onclick="showNewRequest()" class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-sm font-medium transition-colors"> + New Request </button>
+        </div>
+        <div id="requests-list" class="space-y-3 max-h-96 overflow-y-auto scrollbar-thin">
+         <div class="text-center py-8 text-gray-500">
+          <p>No meeting requests yet</p>
+         </div>
+        </div>
+       </div><!-- Available Slots Panel -->
+       <div class="glass rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-6">
+         <h2 class="text-lg font-semibold flex items-center gap-2">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg> Available Slots</h2><button onclick="showAddAvailability()" class="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-medium transition-colors"> + Add Slot </button>
+        </div>
+        <div id="slots-list" class="space-y-3 max-h-96 overflow-y-auto scrollbar-thin">
+         <div class="text-center py-8 text-gray-500">
+          <p>No available slots</p>
+         </div>
+        </div>
+       </div>
+      </div><!-- Negotiation Results -->
+      <div class="glass rounded-2xl p-6 mt-6">
+       <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-semibold flex items-center gap-2">
+         <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+         </svg> Negotiation Results</h2><button onclick="runNegotiation()" id="negotiate-btn" class="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg text-sm font-medium transition-all flex items-center gap-2">
+         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+         </svg> Run Negotiation </button>
+       </div>
+       <div id="negotiation-results" class="space-y-3">
+        <div class="text-center py-8 text-gray-500">
+         <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+         </svg>
+         <p>Click "Run Negotiation" to find optimal meeting times</p>
+         <p class="text-sm mt-1">The algorithm will match requests with available slots</p>
+        </div>
+       </div>
+      </div>
+     </div><!-- Calendar View -->
+     <div id="calendar-view" class="view-panel hidden">
+      <div class="glass rounded-2xl p-4 md:p-6">
+       <div class="flex items-center justify-between mb-6">
+        <button onclick="changeWeek(-1)" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+         </svg></button>
+        <h2 id="calendar-title" class="text-lg font-semibold flex-1 text-center px-2"></h2><button onclick="changeWeek(1)" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+         </svg></button>
+       </div><button onclick="goToToday()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-medium transition-colors"> Today </button>
+      </div><!-- Calendar Legend -->
+      <div class="flex items-center gap-4 mb-4 text-sm">
+       <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded bg-emerald-500"></div><span class="text-gray-400">Available</span>
+       </div>
+       <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded bg-blue-500"></div><span class="text-gray-400">Confirmed</span>
+       </div>
+       <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded bg-amber-500"></div><span class="text-gray-400">Pending</span>
+       </div>
+      </div><!-- Calendar Grid -->
+      <div id="calendar-grid" class="overflow-x-auto scrollbar-thin">
+       <!-- Generated by JS -->
+      </div>
+     </div>
+    </div><!-- Settings View -->
+    <div id="settings-view" class="view-panel hidden w-full">
+     <div class="w-full max-w-7xl mx-auto space-y-4 md:space-y-6">
+      <!-- General Settings -->
+      <div class="glass rounded-2xl p-6 animate-slide">
+       <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
+        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg> General Settings</h2>
+       <div class="space-y-4">
+        <div>
+         <label class="block text-sm text-gray-400 mb-2">Default Meeting Duration (minutes)</label> <select id="meeting-duration" class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none"> <option value="30">30 minutes</option> <option value="60" selected>60 minutes</option> <option value="90">90 minutes</option> <option value="120">120 minutes</option> </select>
+        </div>
+        <div>
+         <label class="block text-sm text-gray-400 mb-2">Time Zone</label> <select class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none"> <option selected>UTC</option> <option>EST (UTC-5)</option> <option>CST (UTC-6)</option> <option>MST (UTC-7)</option> <option>PST (UTC-8)</option> <option>GMT (UTC+0)</option> <option>CET (UTC+1)</option> <option>IST (UTC+5:30)</option> </select>
+        </div>
+        <div>
+         <label class="block text-sm text-gray-400 mb-2">Business Hours Start</label> <input type="time" value="09:00" class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+        </div>
+        <div>
+         <label class="block text-sm text-gray-400 mb-2">Business Hours End</label> <input type="time" value="17:00" class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+        </div><button onclick="showToast('Settings saved successfully', 'success')" class="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg font-medium transition-colors">Save Settings</button>
+       </div>
+      </div><!-- Data Management -->
+      <div class="glass rounded-2xl p-6 animate-slide" style="animation-delay: 0.1s">
+       <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
+        <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg> Data Management</h2>
+       <div class="space-y-3">
+        <button onclick="exportData()" class="w-full px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 rounded-lg text-emerald-300 font-medium transition-colors flex items-center justify-center gap-2">
+         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+         </svg> Export Data (JSON) </button> <button onclick="clearAllData()" class="w-full px-4 py-2 bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 rounded-lg text-red-300 font-medium transition-colors flex items-center justify-center gap-2">
+         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+         </svg> Clear All Data </button>
+        <p class="text-sm text-gray-500 text-center mt-4">Total Records: <span class="font-bold" id="settings-record-count">0</span>/999</p>
+       </div>
+      </div>
+     </div>
+    </div><!-- Help View -->
+    <div id="help-view" class="view-panel hidden w-full">
+     <div class="w-full max-w-7xl mx-auto space-y-4 md:space-y-6">
+      <div class="glass rounded-2xl p-6 animate-slide">
+       <h2 class="text-2xl font-bold mb-6">Help &amp; Support</h2>
+       <div class="space-y-6">
+        <div class="border-b border-white/10 pb-6">
+         <h3 class="text-lg font-semibold mb-2 flex items-center gap-2"><span class="text-emerald-400">Q:</span> How do I add my availability?</h3>
+         <p class="text-gray-400">Go to the Dashboard and click "Add Availability" or navigate to the Negotiate tab. Fill in your date, start time, end time, and priority level. Your slots will appear on the calendar immediately.</p>
+        </div>
+        <div class="border-b border-white/10 pb-6">
+         <h3 class="text-lg font-semibold mb-2 flex items-center gap-2"><span class="text-blue-400">Q:</span> How do I create a meeting request?</h3>
+         <p class="text-gray-400">Click "New Request" from the Dashboard or Negotiate tab. Enter the meeting title, your name, preferred date and time. The system will add this to pending requests.</p>
+        </div>
+        <div class="border-b border-white/10 pb-6">
+         <h3 class="text-lg font-semibold mb-2 flex items-center gap-2"><span class="text-purple-400">Q:</span> What does "Run Negotiation" do?</h3>
+         <p class="text-gray-400">The AI algorithm analyzes all meeting requests and available slots to find the best matches. It considers exact time matches, proximity, priority levels, and provides match scores to help you make decisions quickly.</p>
+        </div>
+        <div class="border-b border-white/10 pb-6">
+         <h3 class="text-lg font-semibold mb-2 flex items-center gap-2"><span class="text-amber-400">Q:</span> What is the match score?</h3>
+         <p class="text-gray-400">The match score (0-100%) represents how well a slot matches a request. Higher scores indicate better compatibility based on date, time overlap, and priority. Scores above 70% are recommended for confirmation.</p>
+        </div>
+        <div class="border-b border-white/10 pb-6">
+         <h3 class="text-lg font-semibold mb-2 flex items-center gap-2"><span class="text-teal-400">Q:</span> Can I view my calendar?</h3>
+         <p class="text-gray-400">Yes! Click the Calendar tab to see a weekly view of all your meetings and availability slots. Use the navigation arrows to browse different weeks or click "Today" to return to the current week.</p>
+        </div>
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mt-6">
+         <p class="text-blue-300 text-sm"><span class="font-semibold">Need more help?</span> Check the documentation or contact our support team at support@calendarnegotiator.com</p>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div><!-- About View -->
+    <div id="about-view" class="view-panel hidden w-full">
+     <div class="w-full max-w-7xl mx-auto space-y-4 md:space-y-6">
+      <div class="glass rounded-2xl p-8 animate-slide">
+       <div class="text-center mb-8">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mx-auto mb-4">
+         <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+         </svg>
+        </div>
+        <h1 class="text-3xl font-bold mb-2">Smart Calendar Negotiator</h1>
+        <p class="text-gray-400">Version 1.0.0</p>
+       </div>
+       <div class="space-y-6">
+        <div>
+         <h2 class="text-xl font-semibold mb-3 flex items-center gap-2">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg> About This App</h2>
+         <p class="text-gray-400 leading-relaxed">Smart Calendar Negotiator is an intelligent scheduling application designed to help teams find optimal meeting times. Using advanced AI algorithms, it analyzes meeting requests and available slots to provide the best possible matches, saving time and reducing scheduling conflicts.</p>
+        </div>
+        <div>
+         <h2 class="text-xl font-semibold mb-3 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg> Key Features</h2>
+         <ul class="space-y-2 text-gray-400">
+          <li class="flex items-start gap-3"><span class="text-emerald-400 font-bold mt-1">•</span> <span>AI-powered meeting negotiation algorithm</span></li>
+          <li class="flex items-start gap-3"><span class="text-emerald-400 font-bold mt-1">•</span> <span>Real-time calendar synchronization</span></li>
+          <li class="flex items-start gap-3"><span class="text-emerald-400 font-bold mt-1">•</span> <span>Match scoring and suggestions</span></li>
+          <li class="flex items-start gap-3"><span class="text-emerald-400 font-bold mt-1">•</span> <span>Responsive design for all devices</span></li>
+          <li class="flex items-start gap-3"><span class="text-emerald-400 font-bold mt-1">•</span> <span>Priority-based slot management</span></li>
+         </ul>
+        </div>
+        <div class="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
+         <h3 class="text-purple-300 font-semibold mb-2">Technology Stack</h3>
+         <p class="text-purple-300/80 text-sm">Built with modern web technologies including HTML5, CSS3, JavaScript, and Tailwind CSS for optimal performance and user experience.</p>
+        </div>
+        <div class="text-center pt-6 border-t border-white/10">
+         <p class="text-gray-500 text-sm mb-2">© 2024 Smart Calendar Negotiator</p>
+         <p class="text-gray-600 text-xs">Designed to make scheduling smarter and easier</p>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </main>
+  </div><!-- Modal Overlay -->
+  <div id="modal-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+   <div id="modal-content" class="glass rounded-2xl p-6 w-full max-w-md animate-slide">
+    <!-- Modal content injected by JS -->
+   </div>
+  </div><!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 space-y-2"></div>
+  <script>
+    // ========== Configuration ==========
+    const defaultConfig = {
+      app_title: 'Smart Calendar Negotiator',
+      welcome_message: 'Find the perfect meeting time',
+      primary_color: '#10b981',
+      surface_color: '#1a1a2e',
+      text_color: '#f3f4f6',
+      accent_color: '#3b82f6',
+      secondary_color: '#8b5cf6'
+    };
+
+    let config = { ...defaultConfig };
+    let allData = [];
+    let currentWeekStart = getWeekStart(new Date());
+
+    // ========== Local Storage Setup ==========
+    function loadData() {
+      const saved = localStorage.getItem('calendarData');
+      allData = saved ? JSON.parse(saved) : [];
+    }
+
+    function saveData() {
+      localStorage.setItem('calendarData', JSON.stringify(allData));
+    }
+
+    function addRecord(data) {
+      const record = {
+        ...data,
+        __backendId: 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      };
+      allData.push(record);
+      saveData();
+      updateUI();
+      return record;
+    }
+
+    function updateRecord(id, updates) {
+      const index = allData.findIndex(d => d.__backendId === id);
+      if (index !== -1) {
+        allData[index] = { ...allData[index], ...updates };
+        saveData();
+        updateUI();
+      }
+    }
+
+    function deleteRecord(id) {
+      allData = allData.filter(d => d.__backendId !== id);
+      saveData();
+      updateUI();
+    }
+
+    // ========== Element SDK Setup ==========
+    function initElementSDK() {
+      if (window.elementSdk) {
+        window.elementSdk.init({
+          defaultConfig,
+          onConfigChange: async (newConfig) => {
+            config = { ...defaultConfig, ...newConfig };
+            applyConfig();
+          },
+          mapToCapabilities: (cfg) => ({
+            recolorables: [
+              {
+                get: () => cfg.primary_color || defaultConfig.primary_color,
+                set: (v) => { cfg.primary_color = v; window.elementSdk.setConfig({ primary_color: v }); }
+              },
+              {
+                get: () => cfg.surface_color || defaultConfig.surface_color,
+                set: (v) => { cfg.surface_color = v; window.elementSdk.setConfig({ surface_color: v }); }
+              },
+              {
+                get: () => cfg.text_color || defaultConfig.text_color,
+                set: (v) => { cfg.text_color = v; window.elementSdk.setConfig({ text_color: v }); }
+              },
+              {
+                get: () => cfg.accent_color || defaultConfig.accent_color,
+                set: (v) => { cfg.accent_color = v; window.elementSdk.setConfig({ accent_color: v }); }
+              },
+              {
+                get: () => cfg.secondary_color || defaultConfig.secondary_color,
+                set: (v) => { cfg.secondary_color = v; window.elementSdk.setConfig({ secondary_color: v }); }
+              }
+            ],
+            borderables: [],
+            fontEditable: undefined,
+            fontSizeable: undefined
+          }),
+          mapToEditPanelValues: (cfg) => new Map([
+            ['app_title', cfg.app_title || defaultConfig.app_title],
+            ['welcome_message', cfg.welcome_message || defaultConfig.welcome_message]
+          ])
+        });
+      }
+    }
+
+    function applyConfig() {
+      document.getElementById('app-title').textContent = config.app_title || defaultConfig.app_title;
+      document.getElementById('welcome-message').textContent = config.welcome_message || defaultConfig.welcome_message;
+      
+      document.body.style.backgroundColor = config.surface_color || defaultConfig.surface_color;
+      document.body.style.color = config.text_color || defaultConfig.text_color;
+    }
+
+    // ========== UI Functions ==========
+    function showView(viewName) {
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById(`${viewName}-view`).classList.remove('hidden');
+      
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('bg-emerald-500', 'text-white');
+        btn.classList.add('text-gray-400', 'hover:text-white', 'hover:bg-white/10');
+      });
+      
+      const activeBtn = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-emerald-500', 'text-white');
+        activeBtn.classList.remove('text-gray-400', 'hover:text-white', 'hover:bg-white/10');
+      }
+      
+      if (viewName === 'calendar') {
+        renderCalendar();
+      }
+    }
+
+    function updateUI() {
+      const requests = allData.filter(d => d.type === 'request');
+      const slots = allData.filter(d => d.type === 'slot');
+      const pending = requests.filter(r => r.status === 'pending');
+      const confirmed = requests.filter(r => r.status === 'confirmed');
+      
+      // Update stats
+      document.getElementById('pending-count').textContent = pending.length;
+      document.getElementById('confirmed-count').textContent = confirmed.length;
+      document.getElementById('slots-count').textContent = slots.length;
+      document.getElementById('record-count').textContent = `${allData.length}/999 records`;
+      
+      // Update requests list
+      renderRequestsList(requests);
+      
+      // Update slots list
+      renderSlotsList(slots);
+      
+      // Update recent activity
+      renderRecentActivity();
+      
+      // Update calendar if visible
+      if (!document.getElementById('calendar-view').classList.contains('hidden')) {
+        renderCalendar();
+      }
+    }
+
+    function renderRequestsList(requests) {
+      const container = document.getElementById('requests-list');
+      if (requests.length === 0) {
+        container.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No meeting requests yet</p></div>';
+        return;
+      }
+      
+      container.innerHTML = requests.map(req => `
+        <div class="p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all time-slot" data-id="${req.__backendId}">
+          <div class="flex items-start justify-between">
+            <div class="flex-1">
+              <h3 class="font-medium text-white">${escapeHtml(req.title)}</h3>
+              <p class="text-sm text-gray-400 mt-1">
+                <span class="mono">${formatDate(req.date)}</span> • 
+                <span class="mono">${req.start_time} - ${req.end_time}</span>
+              </p>
+              <p class="text-xs text-gray-500 mt-1">From: ${escapeHtml(req.participant_name)}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(req.status)}">
+                ${req.status}
+              </span>
+              <button onclick="deleteRecordWithConfirm('${req.__backendId}')" class="p-1 text-gray-500 hover:text-red-400 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          ${req.status === 'pending' ? `
+            <div class="flex gap-2 mt-3">
+              <button onclick="confirmRequest('${req.__backendId}')" class="flex-1 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm hover:bg-emerald-500/30 transition-colors">
+                Confirm
+              </button>
+              <button onclick="declineRequest('${req.__backendId}')" class="flex-1 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition-colors">
+                Decline
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderSlotsList(slots) {
+      const container = document.getElementById('slots-list');
+      if (slots.length === 0) {
+        container.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No available slots</p></div>';
+        return;
+      }
+      
+      container.innerHTML = slots.map(slot => `
+        <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all time-slot" data-id="${slot.__backendId}">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-medium text-emerald-400 mono">${formatDate(slot.date)}</p>
+              <p class="text-sm text-gray-300 mono mt-1">${slot.start_time} - ${slot.end_time}</p>
+              <p class="text-xs text-gray-500 mt-1">Priority: ${'⭐'.repeat(slot.priority || 1)}</p>
+            </div>
+            <button onclick="deleteRecordWithConfirm('${slot.__backendId}')" class="p-2 text-gray-500 hover:text-red-400 transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderRecentActivity() {
+      const container = document.getElementById('recent-activity');
+      const sorted = [...allData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+      
+      if (sorted.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-8 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+            </svg>
+            <p>No recent activity</p>
+            <p class="text-sm mt-1">Start by adding your availability or creating a meeting request</p>
+          </div>
+        `;
+        return;
+      }
+      
+      container.innerHTML = sorted.map(item => `
+        <div class="flex items-center gap-4 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
+          <div class="w-10 h-10 rounded-lg ${item.type === 'request' ? 'bg-amber-500/20' : 'bg-emerald-500/20'} flex items-center justify-center flex-shrink-0">
+            ${item.type === 'request' ? `
+              <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+              </svg>
+            ` : `
+              <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+            `}
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium text-white truncate">${item.type === 'request' ? escapeHtml(item.title) : 'Available Slot'}</p>
+            <p class="text-sm text-gray-400 mono">${formatDate(item.date)} • ${item.start_time}</p>
+          </div>
+          <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(item.status || 'available')}">
+            ${item.status || 'available'}
+          </span>
+        </div>
+      `).join('');
+    }
+
+    // ========== Calendar Functions ==========
+    function getWeekStart(date) {
+      const d = new Date(date);
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const newDate = new Date(d.setDate(diff));
+      newDate.setHours(0, 0, 0, 0);
+      return newDate;
+    }
+
+    function changeWeek(delta) {
+      currentWeekStart.setDate(currentWeekStart.getDate() + (delta * 7));
+      renderCalendar();
+    }
+
+    function goToToday() {
+      currentWeekStart = getWeekStart(new Date());
+      renderCalendar();
+    }
+
+    function renderCalendar() {
+      const container = document.getElementById('calendar-grid');
+      const days = [];
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(weekStart);
+        day.setDate(day.getDate() + i);
+        day.setHours(0, 0, 0, 0);
+        days.push(day);
+      }
+      
+      const monthYear = days[0].toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      document.getElementById('calendar-title').textContent = monthYear;
+      
+      const hours = [];
+      for (let h = 8; h <= 20; h++) {
+        hours.push(`${h.toString().padStart(2, '0')}:00`);
+      }
+      
+      let html = '<div class="calendar-grid">';
+      
+      // Header row
+      html += '<div class="p-2 text-center text-xs text-gray-600 font-bold"></div>';
+      days.forEach(day => {
+        const isToday = isSameDay(day, new Date());
+        html += `
+          <div class="p-2 text-center border-b border-white/10 ${isToday ? 'bg-emerald-500/20 rounded-t-xl' : ''}">
+            <p class="text-xs text-gray-500 font-medium">${day.toLocaleDateString('en-US', { weekday: 'short' })}</p>
+            <p class="text-sm md:text-base font-bold ${isToday ? 'text-emerald-400' : 'text-white'}">${day.getDate()}</p>
+          </div>
+        `;
+      });
+      
+      // Time rows
+      hours.forEach(hour => {
+        html += `<div class="p-1 md:p-2 text-right text-xs text-gray-500 mono border-t border-white/5 flex items-center justify-end"><span class="text-xs">${hour}</span></div>`;
+        
+        days.forEach(day => {
+          const dateStr = formatDateISO(day);
+          const events = allData.filter(e => e.date === dateStr && e.start_time && e.start_time.startsWith(hour.split(':')[0]));
+          const isToday = isSameDay(day, new Date());
+          
+          html += `
+            <div class="p-1 border-t border-white/5 min-h-[50px] md:min-h-[60px] cursor-pointer hover:bg-white/5 transition-colors ${isToday ? 'bg-emerald-500/5' : ''}" onclick="showAddAvailability('${dateStr}', '${hour}')">
+              ${events.map(e => `
+                <div class="p-1 rounded text-xs mb-0.5 cursor-pointer ${e.type === 'request' ? (e.status === 'confirmed' ? 'bg-blue-500/30 text-blue-300' : 'bg-amber-500/30 text-amber-300') : 'bg-emerald-500/30 text-emerald-300'} overflow-hidden">
+                  <p class="font-medium truncate text-xs">${e.type === 'request' ? escapeHtml(e.title) : 'Available'}</p>
+                  <p class="opacity-75 mono text-xs truncate">${e.start_time}</p>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        });
+      });
+      
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    // ========== Modal Functions ==========
+    function showModal(content) {
+      document.getElementById('modal-content').innerHTML = content;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function hideModal() {
+      document.getElementById('modal-overlay').classList.add('hidden');
+    }
+
+    function showAddAvailability(date = '', time = '') {
+      const today = date || formatDateISO(new Date());
+      const defaultTime = time || '09:00';
+      
+      showModal(`
+        <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+          <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+          </svg>
+          Add Available Slot
+        </h3>
+        <form onsubmit="handleAddSlot(event)" class="space-y-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Date</label>
+            <input type="date" name="date" value="${today}" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-emerald-500 focus:outline-none">
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Start Time</label>
+              <input type="time" name="start_time" value="${defaultTime}" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-emerald-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">End Time</label>
+              <input type="time" name="end_time" value="10:00" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-emerald-500 focus:outline-none">
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Priority (1-5)</label>
+            <input type="range" name="priority" min="1" max="5" value="3" class="w-full accent-emerald-500">
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button type="button" onclick="hideModal()" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">Cancel</button>
+            <button type="submit" id="add-slot-btn" class="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-medium transition-colors">Add Slot</button>
+          </div>
+        </form>
+      `);
+    }
+
+    function showNewRequest() {
+      const today = formatDateISO(new Date());
+      
+      showModal(`
+        <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+          <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          New Meeting Request
+        </h3>
+        <form onsubmit="handleNewRequest(event)" class="space-y-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Meeting Title</label>
+            <input type="text" name="title" placeholder="e.g., Project Discussion" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Your Name</label>
+            <input type="text" name="participant_name" placeholder="e.g., John Doe" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Preferred Date</label>
+            <input type="date" name="date" value="${today}" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Start Time</label>
+              <input type="time" name="start_time" value="09:00" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">End Time</label>
+              <input type="time" name="end_time" value="10:00" required class="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-blue-500 focus:outline-none">
+            </div>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button type="button" onclick="hideModal()" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">Cancel</button>
+            <button type="submit" id="add-request-btn" class="flex-1 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg font-medium transition-colors">Send Request</button>
+          </div>
+        </form>
+      `);
+    }
+
+    // ========== Data Operations ==========
+    async function handleAddSlot(e) {
+      e.preventDefault();
+      
+      if (allData.length >= 999) {
+        showToast('Maximum limit of 999 records reached', 'error');
+        return;
+      }
+      
+      const form = e.target;
+      const btn = document.getElementById('add-slot-btn');
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+      
+      try {
+        const slotData = {
+          type: 'slot',
+          title: '',
+          date: form.date.value,
+          start_time: form.start_time.value,
+          end_time: form.end_time.value,
+          participant_name: '',
+          status: 'available',
+          priority: parseInt(form.priority.value),
+          created_at: new Date().toISOString()
+        };
+        
+        addRecord(slotData);
+        hideModal();
+        showToast('Availability slot added successfully', 'success');
+      } catch (error) {
+        showToast('Failed to add slot', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Add Slot';
+      }
+    }
+
+    async function handleNewRequest(e) {
+      e.preventDefault();
+      
+      if (allData.length >= 999) {
+        showToast('Maximum limit of 999 records reached', 'error');
+        return;
+      }
+      
+      const form = e.target;
+      const btn = document.getElementById('add-request-btn');
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      
+      try {
+        const requestData = {
+          type: 'request',
+          title: form.title.value,
+          date: form.date.value,
+          start_time: form.start_time.value,
+          end_time: form.end_time.value,
+          participant_name: form.participant_name.value,
+          status: 'pending',
+          priority: 3,
+          created_at: new Date().toISOString()
+        };
+        
+        addRecord(requestData);
+        hideModal();
+        showToast('Meeting request sent successfully', 'success');
+      } catch (error) {
+        showToast('Failed to send request', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Send Request';
+      }
+    }
+
+    async function confirmRequest(id) {
+      updateRecord(id, { status: 'confirmed' });
+      showToast('Meeting confirmed!', 'success');
+    }
+
+    async function declineRequest(id) {
+      updateRecord(id, { status: 'declined' });
+      showToast('Meeting declined', 'success');
+    }
+
+    function deleteRecordWithConfirm(id) {
+      const record = allData.find(d => d.__backendId === id);
+      if (!record) return;
+      
+      // Show inline confirmation
+      const element = document.querySelector(`[data-id="${id}"]`);
+      if (element) {
+        const originalContent = element.innerHTML;
+        element.innerHTML = `
+          <div class="text-center py-4">
+            <p class="text-sm text-gray-300 mb-3">Delete this item?</p>
+            <div class="flex gap-2 justify-center">
+              <button onclick="confirmDeleteRecord('${id}')" class="px-4 py-1.5 bg-red-500 hover:bg-red-600 rounded-lg text-sm transition-colors">Delete</button>
+              <button onclick="updateUI()" class="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">Cancel</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function confirmDeleteRecord(id) {
+      deleteRecord(id);
+      showToast('Item deleted', 'success');
+    }
+
+    // ========== Advanced AI Negotiation Algorithm ==========
+    const AIConfig = {
+      exactMatchWeight: 0.35,
+      timeFlexibilityWeight: 0.25,
+      priorityWeight: 0.20,
+      proximityWeight: 0.15,
+      conflictResolutionWeight: 0.05
+    };
+
+    function runNegotiation() {
+      const btn = document.getElementById('negotiate-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading-shimmer">AI Analyzing...</span>';
+      
+      setTimeout(() => {
+        const requests = allData.filter(d => d.type === 'request' && d.status === 'pending');
+        const slots = allData.filter(d => d.type === 'slot');
+        
+        if (requests.length === 0 || slots.length === 0) {
+          renderNegotiationResults([]);
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            Run Negotiation
+          `;
+          return;
+        }
+        
+        // Generate all possible pairings and score them
+        const pairings = generateAllPairings(requests, slots);
+        
+        // Apply AI negotiation strategies
+        const optimizedMatches = optimizeMatches(pairings, requests, slots);
+        
+        // Resolve conflicts and generate final recommendations
+        const finalResults = generateFinalRecommendations(optimizedMatches, requests, slots);
+        
+        renderNegotiationResults(finalResults);
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          Run Negotiation
+        `;
+      }, 2000);
+    }
+
+    function generateAllPairings(requests, slots) {
+      const pairings = [];
+      
+      requests.forEach(request => {
+        slots.forEach(slot => {
+          const score = calculateAIScore(request, slot);
+          pairings.push({
+            requestId: request.__backendId,
+            slotId: slot.__backendId,
+            request,
+            slot,
+            score,
+            metadata: {
+              isExactMatch: isExactMatch(request, slot),
+              dayDifference: calculateDayDifference(request.date, slot.date),
+              timeOverlap: calculateTimeOverlapPercentage(request, slot),
+              slotPriority: slot.priority || 1,
+              conflictCount: 0
+            }
+          });
+        });
+      });
+      
+      return pairings;
+    }
+
+    function calculateAIScore(request, slot) {
+      let score = 0;
+      
+      // 1. Exact Match Component (35%)
+      const exactMatchScore = isExactMatch(request, slot) ? 100 : 0;
+      score += exactMatchScore * AIConfig.exactMatchWeight;
+      
+      // 2. Time Flexibility Component (25%)
+      const timeFlexibilityScore = calculateTimeFlexibilityScore(request, slot);
+      score += timeFlexibilityScore * AIConfig.timeFlexibilityWeight;
+      
+      // 3. Priority Component (20%)
+      const priorityScore = (slot.priority || 1) / 5 * 100;
+      score += priorityScore * AIConfig.priorityWeight;
+      
+      // 4. Proximity Component (15%)
+      const proximityScore = calculateProximityScore(request.date, slot.date);
+      score += proximityScore * AIConfig.proximityWeight;
+      
+      // 5. Conflict Resolution Component (5%)
+      const conflictScore = 50; // Base neutral score
+      score += conflictScore * AIConfig.conflictResolutionWeight;
+      
+      return Math.round(score);
+    }
+
+    function isExactMatch(request, slot) {
+      return request.date === slot.date &&
+             timeOverlaps(slot.start_time, slot.end_time, request.start_time, request.end_time);
+    }
+
+    function calculateTimeFlexibilityScore(request, slot) {
+      if (request.date !== slot.date) return 0;
+      
+      const overlap = calculateTimeOverlapPercentage(request, slot);
+      
+      // Full overlap = 100, partial overlap = 50-99, no overlap = 0
+      if (overlap >= 0.95) return 100;
+      if (overlap >= 0.5) return 75 + (overlap - 0.5) * 50;
+      if (overlap > 0) return overlap * 100;
+      return 0;
+    }
+
+    function calculateTimeOverlapPercentage(request, slot) {
+      const reqStart = timeToMinutes(request.start_time);
+      const reqEnd = timeToMinutes(request.end_time);
+      const slotStart = timeToMinutes(slot.start_time);
+      const slotEnd = timeToMinutes(slot.end_time);
+      
+      const overlapStart = Math.max(reqStart, slotStart);
+      const overlapEnd = Math.min(reqEnd, slotEnd);
+      
+      if (overlapEnd <= overlapStart) return 0;
+      
+      const overlapDuration = overlapEnd - overlapStart;
+      const requestDuration = reqEnd - reqStart;
+      
+      return overlapDuration / requestDuration;
+    }
+
+    function calculateProximityScore(date1, date2) {
+      const dayDiff = calculateDayDifference(date1, date2);
+      
+      // Same day = 100, next day = 90, within 3 days = 70, within week = 40, beyond week = 0
+      if (dayDiff === 0) return 100;
+      if (dayDiff === 1) return 90;
+      if (dayDiff <= 3) return 70;
+      if (dayDiff <= 7) return 40;
+      return 0;
+    }
+
+    function calculateDayDifference(date1, date2) {
+      const d1 = new Date(date1);
+      const d2 = new Date(date2);
+      const diffTime = Math.abs(d2 - d1);
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
+    function timeToMinutes(timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    }
+
+    function timeOverlaps(start1, end1, start2, end2) {
+      return start1 < end2 && end1 > start2;
+    }
+
+    function optimizeMatches(pairings, requests, slots) {
+      // Sort by score descending
+      const sorted = [...pairings].sort((a, b) => b.score - a.score);
+      
+      // Greedy matching: assign best matches while avoiding conflicts
+      const matches = [];
+      const usedSlots = new Set();
+      const matchedRequests = new Set();
+      
+      sorted.forEach(pairing => {
+        // Only assign if both request and slot haven't been used
+        if (!matchedRequests.has(pairing.requestId) && !usedSlots.has(pairing.slotId)) {
+          matches.push(pairing);
+          matchedRequests.add(pairing.requestId);
+          usedSlots.add(pairing.slotId);
+        }
+      });
+      
+      return matches;
+    }
+
+    function generateFinalRecommendations(matches, requests, slots) {
+      const results = [];
+      const matchedRequestIds = new Set(matches.map(m => m.requestId));
+      
+      // Add matched recommendations
+      matches.forEach(match => {
+        results.push({
+          request: match.request,
+          matchedSlot: match.slot,
+          score: match.score,
+          status: match.metadata.isExactMatch ? 'exact_match' : 'optimized_match',
+          reasoning: generateReasoningText(match, 'match'),
+          confidence: match.score >= 80 ? 'high' : match.score >= 60 ? 'medium' : 'low'
+        });
+      });
+      
+      // Add unmatched requests with best alternatives
+      requests.forEach(request => {
+        if (!matchedRequestIds.has(request.__backendId)) {
+          // Find best alternative
+          const alternatives = slots
+            .map(slot => ({
+              slot,
+              score: calculateAIScore(request, slot),
+              metadata: {
+                isExactMatch: isExactMatch(request, slot),
+                dayDifference: calculateDayDifference(request.date, slot.date),
+                timeOverlap: calculateTimeOverlapPercentage(request, slot),
+                slotPriority: slot.priority || 1
+              }
+            }))
+            .sort((a, b) => b.score - a.score);
+          
+          if (alternatives.length > 0) {
+            const bestAlt = alternatives[0];
+            results.push({
+              request,
+              matchedSlot: bestAlt.slot,
+              score: bestAlt.score * 0.65, // Reduce score for alternatives
+              status: 'suggested_alternative',
+              reasoning: generateReasoningText(bestAlt, 'alternative'),
+              confidence: 'medium'
+            });
+          } else {
+            results.push({
+              request,
+              matchedSlot: null,
+              score: 0,
+              status: 'no_match',
+              reasoning: 'No available slots match this request. Consider adding more availability.',
+              confidence: 'low'
+            });
+          }
+        }
+      });
+      
+      return results;
+    }
+
+    function generateReasoningText(match, type) {
+      const dayDiff = match.metadata.dayDifference;
+      const overlap = Math.round(match.metadata.timeOverlap * 100);
+      const priority = match.metadata.slotPriority;
+      
+      if (type === 'match') {
+        if (match.metadata.isExactMatch) {
+          return `Perfect time match on ${formatDate(match.slot.date)} with ${overlap}% overlap. High priority slot (${priority}⭐).`;
+        } else if (dayDiff === 0) {
+          return `Same-day alternative with ${overlap}% time overlap. Recommended for high availability.`;
+        }
+      } else if (type === 'alternative') {
+        if (dayDiff === 0) {
+          return `Best available on same day (${overlap}% overlap). Priority: ${priority}⭐`;
+        } else if (dayDiff === 1) {
+          return `Next-day suggestion with good time compatibility (${overlap}% overlap).`;
+        } else {
+          return `Suggested for ${dayDiff} days later with ${overlap}% time alignment.`;
+        }
+      }
+      
+      return 'AI-recommended time slot.';
+    }
+
+    function renderNegotiationResults(results) {
+      const container = document.getElementById('negotiation-results');
+      
+      if (results.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-8 text-gray-500">
+            <p>No pending requests to negotiate</p>
+            <p class="text-sm mt-1">Create some meeting requests first</p>
+          </div>
+        `;
+        return;
+      }
+      
+      container.innerHTML = results.map(r => `
+        <div class="p-4 rounded-xl ${r.status === 'match' ? 'bg-emerald-500/10 border border-emerald-500/30' : r.status === 'alternative' ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-red-500/10 border border-red-500/30'}">
+          <div class="flex items-start justify-between">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-2">
+                <h4 class="font-medium text-white">${escapeHtml(r.request.title)}</h4>
+                <span class="px-2 py-0.5 rounded-full text-xs ${r.status === 'match' ? 'bg-emerald-500/30 text-emerald-300' : r.status === 'alternative' ? 'bg-amber-500/30 text-amber-300' : 'bg-red-500/30 text-red-300'}">
+                  ${r.status === 'match' ? 'Perfect Match' : r.status === 'alternative' ? 'Alternative Found' : 'No Match'}
+                </span>
+              </div>
+              <p class="text-sm text-gray-400">
+                Requested: <span class="mono">${formatDate(r.request.date)} ${r.request.start_time} - ${r.request.end_time}</span>
+              </p>
+              ${r.matchedSlot ? `
+                <p class="text-sm text-gray-400 mt-1">
+                  ${r.status === 'match' ? 'Matches with' : 'Suggested'}: <span class="mono text-emerald-400">${formatDate(r.matchedSlot.date)} ${r.matchedSlot.start_time} - ${r.matchedSlot.end_time}</span>
+                </p>
+              ` : ''}
+            </div>
+            <div class="text-right">
+              <div class="text-2xl font-bold ${r.score >= 70 ? 'text-emerald-400' : r.score >= 40 ? 'text-amber-400' : 'text-red-400'}">${Math.round(r.score)}%</div>
+              <p class="text-xs text-gray-500">match score</p>
+            </div>
+          </div>
+          ${r.matchedSlot && r.status !== 'no_match' ? `
+            <div class="flex gap-2 mt-3">
+              <button onclick="acceptSuggestion('${r.request.__backendId}')" class="flex-1 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm hover:bg-emerald-500/30 transition-colors">
+                Accept & Confirm
+              </button>
+              <button onclick="showNewRequest()" class="flex-1 py-1.5 bg-white/10 text-gray-300 rounded-lg text-sm hover:bg-white/20 transition-colors">
+                Counter Propose
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    async function acceptSuggestion(requestId) {
+      updateRecord(requestId, { status: 'confirmed' });
+      showToast('Meeting confirmed!', 'success');
+      runNegotiation(); // Refresh results
+    }
+
+    // ========== Utility Functions ==========
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function formatDateISO(date) {
+      return date.toISOString().split('T')[0];
+    }
+
+    function isSameDay(d1, d2) {
+      return d1.getFullYear() === d2.getFullYear() &&
+             d1.getMonth() === d2.getMonth() &&
+             d1.getDate() === d2.getDate();
+    }
+
+    function getStatusClass(status) {
+      switch (status) {
+        case 'confirmed': return 'bg-emerald-500/30 text-emerald-300';
+        case 'pending': return 'bg-amber-500/30 text-amber-300';
+        case 'declined': return 'bg-red-500/30 text-red-300';
+        case 'available': return 'bg-blue-500/30 text-blue-300';
+        default: return 'bg-gray-500/30 text-gray-300';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `px-4 py-3 rounded-lg shadow-lg animate-slide flex items-center gap-2 ${
+        type === 'success' ? 'bg-emerald-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+      }`;
+      toast.innerHTML = `
+        ${type === 'success' ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : 
+          type === 'error' ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' : 
+          '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'}
+        <span class="font-medium">${message}</span>
+      `;
+      container.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Close modal on overlay click
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('modal-overlay')) {
+        hideModal();
+      }
+    });
+
+    // ========== Mobile Menu ==========
+    function toggleMenu() {
+      const menu = document.getElementById('mobile-menu');
+      menu.classList.toggle('hidden');
+    }
+
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+      const menu = document.getElementById('mobile-menu');
+      const btn = document.querySelector('button[onclick="toggleMenu()"]');
+      if (!menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+
+    // ========== Data Export/Import ==========
+    function exportData() {
+      const dataToExport = {
+        app: 'Smart Calendar Negotiator',
+        version: '1.0.0',
+        exportDate: new Date().toISOString(),
+        records: allData
+      };
+      
+      const dataStr = JSON.stringify(dataToExport, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `calendar-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showToast('Data exported successfully', 'success');
+    }
+
+    function clearAllData() {
+      // Show inline confirmation
+      const btn = event.target;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `
+        <span>Are you sure? Click again to confirm</span>
+      `;
+      
+      const confirmDelete = () => {
+        allData = [];
+        saveData();
+        updateUI();
+        showToast('All data cleared', 'success');
+        btn.innerHTML = originalText;
+        btn.removeEventListener('click', confirmDelete);
+      };
+      
+      btn.addEventListener('click', confirmDelete);
+      setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.removeEventListener('click', confirmDelete);
+      }, 5000);
+    }
+
+    // ========== Update Settings Display ==========
+    function updateSettingsDisplay() {
+      const recordCount = document.getElementById('settings-record-count');
+      if (recordCount) {
+        recordCount.textContent = allData.length;
+      }
+    }
+
+    // Override updateUI to also update settings
+    const originalUpdateUI = updateUI;
+    updateUI = function() {
+      originalUpdateUI.call(this);
+      updateSettingsDisplay();
+    };
+
+    // ========== Initialize ==========
+    initElementSDK();
+    loadData(); // Load saved data
+    showView('dashboard');
+    applyConfig();
+    updateUI(); // Update UI with loaded data
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9d97a815265b322e',t:'MTc3MzAzMzkwMC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
